@@ -84,6 +84,60 @@ app.post('/process', async (req, res) => {
       }
     });
 
+    app.post('/process', async (req, res) => {
+  const twiml = new twilio.twiml.VoiceResponse();
+  const userInput = req.body.SpeechResult || '';
+
+  if (!userInput) {
+    twiml.say({ voice: 'Polly.Joanna' }, "I'm sorry, I didn't catch that. Let's try again.");
+    twiml.redirect('/voice');
+    return res.type('text/xml').send(twiml.toString());
+  }
+
+  try {
+    const gptResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: "You are a polite, helpful AI assistant answering calls for Southern Garage Doors. Ask clarifying questions, offer basic info, and always sound friendly and professional."
+        },
+        {
+          role: 'user',
+          content: userInput
+        }
+      ],
+      temperature: 0.4
+    }, {
+      headers: {
+        'Authorization': `Bearer ${process.env.OPENAI_API_KEY}`,
+        'Content-Type': 'application/json'
+      }
+    });
+
+    const reply = gptResponse.data.choices[0].message.content.trim();
+
+    const gather = twiml.gather({
+      input: 'speech',
+      timeout: 10,
+      speechTimeout: 'auto',
+      action: '/process',
+      method: 'POST'
+    });
+
+    gather.say({ voice: 'Polly.Joanna' }, reply);
+    twiml.redirect('/voice'); // fallback in case user says nothing
+
+    res.type('text/xml').send(twiml.toString());
+
+  } catch (err) {
+    console.error('GPT error:', err.message);
+    twiml.say("Sorry, there was an error. Please try again later.");
+    res.type('text/xml').send(twiml.toString());
+  }
+});
+
+
     const reply = gptRes.data.choices[0].message.content.toLowerCase();
 
     if (reply.includes('transfer') || reply.includes('speak to')) {
