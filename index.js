@@ -2,14 +2,19 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
+const updateCode = require('./routes/dev/update-code'); // 👈 new auto-update route
 
 require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json()); // 👈 needed for GPT update route
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const FORWARD_NUMBER = process.env.TWILIO_FORWARD_NUMBER;
+
+// Register the GPT update route
+app.use(updateCode);
 
 // Entry point for the call
 app.post('/voice', (req, res) => {
@@ -101,4 +106,5 @@ const port = process.env.PORT || 3000;
 app.listen(port, () => {
   console.log(`AI Assistant is live on port ${port}`);
 });
+
 
