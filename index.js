@@ -11,7 +11,7 @@ app.use(bodyParser.urlencoded({ extended: false }));
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const FORWARD_NUMBER = process.env.TWILIO_FORWARD_NUMBER;
 
-// Route for initial voice request
+// Entry point for the call
 app.post('/voice', (req, res) => {
   const twiml = new VoiceResponse();
 
@@ -23,26 +23,32 @@ app.post('/voice', (req, res) => {
     method: 'POST'
   });
 
-  gather.say("Thanks for calling Southern Garage Doors. How can I help you today?");
+  gather.say({ voice: 'Polly.Joanna' }, "Thanks for calling Southern Garage Doors. How can I help you today?");
   res.type('text/xml').send(twiml.toString());
 });
 
-// Route to process speech result
+// Process the spoken input
 app.post('/process', async (req, res) => {
   const userInput = req.body.SpeechResult || '';
   const twiml = new VoiceResponse();
 
   if (!userInput) {
-    twiml.say("I'm sorry, I didn't catch that. Transferring you to someone now.");
+    twiml.say({ voice: 'Polly.Joanna' }, "I'm sorry, I didn't catch that. Transferring you now.");
     twiml.dial(FORWARD_NUMBER);
+    return res.type('text/xml').send(twiml.toString());
+  }
+
+  // Fast logic for common phrases (avoid GPT call)
+  if (userInput.toLowerCase().includes('spring')) {
+    twiml.say({ voice: 'Polly.Joanna' }, "A standard spring replacement is $599 for most two-spring garage doors.");
     return res.type('text/xml').send(twiml.toString());
   }
 
   try {
     const gptResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
-      model: "gpt-4",
+      model: "gpt-3.5-turbo",
       messages: [
-        { role: "system", content: "You are a helpful garage door assistant. Be professional, concise, and helpful." },
+        { role: "system", content: "You are a helpful and professional garage door assistant. Be concise, courteous, and direct." },
         { role: "user", content: userInput }
       ]
     }, {
@@ -52,19 +58,24 @@ app.post('/process', async (req, res) => {
       }
     });
 
-    const reply = gptResponse.data.choices[0].message.content.toLowerCase();
+    const reply = gptResponse.data.choices[0].message.content.trim().toLowerCase();
 
-    if (reply.includes("talk to someone") || reply.includes("emergency") || reply.includes("transfer")) {
-      twiml.say("Transferring you now.");
+    if (
+      reply.includes("talk to someone") ||
+      reply.includes("speak to") ||
+      reply.includes("transfer") ||
+      reply.includes("emergency")
+    ) {
+      twiml.say({ voice: 'Polly.Joanna' }, "Transferring you now.");
       twiml.dial(FORWARD_NUMBER);
     } else {
-      twiml.say(reply);
+      twiml.say({ voice: 'Polly.Joanna' }, reply);
     }
 
     res.type('text/xml').send(twiml.toString());
   } catch (error) {
     console.error("GPT error:", error.message);
-    twiml.say("Sorry, there was a problem. Forwarding your call.");
+    twiml.say({ voice: 'Polly.Joanna' }, "Sorry, something went wrong. I'm transferring you now.");
     twiml.dial(FORWARD_NUMBER);
     res.type('text/xml').send(twiml.toString());
   }
@@ -72,6 +83,6 @@ app.post('/process', async (req, res) => {
 
 const port = process.env.PORT || 3000;
 app.listen(port, () => {
-  console.log(`AI Assistant live on port ${port}`);
+  console.log(`AI Assistant is live on port ${port}`);
 });
 
