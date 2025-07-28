@@ -80,6 +80,41 @@ router.post('/dev/update-code', async (req, res) => {
     console.error('Update error:', err.message);
     res.status(500).json({ error: 'Update failed.', details: err.message });
   }
+// Roll back to a previous version
+router.post('/dev/rollback', async (req, res) => {
+  const { filename } = req.body;
+  const apiKey = req.headers['x-api-key'];
+
+  if (apiKey !== DEV_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized request.' });
+  }
+
+  if (!filename) {
+    return res.status(400).json({ error: 'Missing backup filename.' });
+  }
+
+  const backupPath = path.join(BACKUP_DIR, filename);
+
+  try {
+    const backupCode = fs.readFileSync(backupPath, 'utf-8');
+    fs.writeFileSync(INDEX_PATH, backupCode);
+
+    // Log the rollback
+    const logEntry = {
+      timestamp: new Date().toISOString(),
+      action: 'rollback',
+      restoredFrom: filename
+    };
+    fs.appendFileSync(LOG_PATH, JSON.stringify(logEntry) + '\n');
+
+    // Auto-deploy
+    await axios.post(DEPLOY_HOOK_URL);
+
+    res.json({ success: true, message: `Rolled back to ${filename}` });
+  } catch (err) {
+    console.error("Rollback error:", err.message);
+    res.status(500).json({ error: 'Rollback failed.', details: err.message });
+  }
 });
 
 module.exports = router;
