@@ -1,0 +1,12 @@
+router.get('/dev/logs', (req, res) => {
+  const apiKey = req.headers['x-api-key'];
+  if (apiKey !== DEV_API_KEY) return res.status(401).json({ error: 'Unauthorized' });
+
+  try {
+    const logData = fs.readFileSync(LOG_PATH, 'utf-8');
+    const lines = logData.trim().split('\n').map(line => JSON.parse(line));
+    res.json({ logs: lines.reverse().slice(0, 50) }); // last 50 entries
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to read logs.' });
+  }
+});
