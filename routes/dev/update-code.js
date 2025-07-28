@@ -6,16 +6,17 @@ const router = express.Router();
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const DEPLOY_HOOK_URL = process.env.RENDER_DEPLOY_HOOK_URL;
-const DEV_API_KEY = process.env.DEV_API_KEY || 'changeme'; // Replace or set in .env
+const DEV_API_KEY = process.env.DEV_API_KEY || 'changeme';
 
 const INDEX_PATH = path.join(__dirname, '..', 'index.js');
 const BACKUP_DIR = path.join(__dirname, '..', 'backups');
 const LOG_PATH = path.join(__dirname, '..', 'logs', 'update-log.jsonl');
 
-// Ensure backup and log dirs exist
+// Ensure backup and log directories exist
 fs.mkdirSync(BACKUP_DIR, { recursive: true });
 fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
 
+// ===== Update Index.js =====
 router.post('/dev/update-code', async (req, res) => {
   const { command } = req.body;
   const apiKey = req.headers['x-api-key'];
@@ -32,7 +33,7 @@ router.post('/dev/update-code', async (req, res) => {
   const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
   const backupPath = path.join(BACKUP_DIR, `index-${timestamp}.js`);
 
-  // Backup first
+  // Backup current code
   fs.writeFileSync(backupPath, originalCode);
 
   try {
@@ -41,7 +42,7 @@ router.post('/dev/update-code', async (req, res) => {
       messages: [
         {
           role: 'system',
-          content: 'You are a Node.js developer modifying index.js for a Twilio voice assistant. The file MUST stay functional and start an Express app with the correct Twilio routes.'
+          content: 'You are a Node.js developer modifying index.js for a Twilio voice assistant. Only return complete working code. Keep Twilio and Express logic intact.'
         },
         { role: 'user', content: `Here is the current code:\n\n${originalCode}` },
         { role: 'user', content: `Please perform this change:\n\n${command}` }
@@ -56,33 +57,30 @@ router.post('/dev/update-code', async (req, res) => {
 
     const newCode = gptRes.data.choices[0].message.content.trim();
 
-    // Basic validation
     if (!newCode.includes('express') || !newCode.includes('app.listen')) {
-      throw new Error("Invalid code output. Key lines missing.");
+      throw new Error('Generated code is missing critical pieces.');
     }
 
-    // Save new version
     fs.writeFileSync(INDEX_PATH, newCode);
 
-    // Log the change
     const logEntry = {
       timestamp: new Date().toISOString(),
+      action: 'update',
       command,
       summary: newCode.slice(0, 250)
     };
     fs.appendFileSync(LOG_PATH, JSON.stringify(logEntry) + '\n');
 
-    // Trigger auto-redeploy
     await axios.post(DEPLOY_HOOK_URL);
 
-    res.json({ success: true, message: 'Code updated and deployment triggered.', backup: backupPath });
+    res.json({ success: true, message: 'Code updated and redeployed.', backup: backupPath });
   } catch (err) {
     console.error('Update error:', err.message);
     res.status(500).json({ error: 'Update failed.', details: err.message });
   }
 });
 
-// ✅ Rollback route moved outside the above route
+// ===== Rollback =====
 router.post('/dev/rollback', async (req, res) => {
   const { filename } = req.body;
   const apiKey = req.headers['x-api-key'];
@@ -110,11 +108,5 @@ router.post('/dev/rollback', async (req, res) => {
 
     await axios.post(DEPLOY_HOOK_URL);
 
-    res.json({ success: true, message: `Rolled back to ${filename}` });
-  } catch (err) {
-    console.error("Rollback error:", err.message);
-    res.status(500).json({ error: 'Rollback failed.', details: err.message });
-  }
-});
+    res
 
-module.exports = router;
