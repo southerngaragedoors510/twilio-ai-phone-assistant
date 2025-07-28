@@ -38,9 +38,17 @@ app.post('/process', async (req, res) => {
     return res.type('text/xml').send(twiml.toString());
   }
 
-  // Fast logic for common phrases (avoid GPT call)
+  // Quick reply shortcut
   if (userInput.toLowerCase().includes('spring')) {
-    twiml.say({ voice: 'Polly.Joanna' }, "A standard spring replacement is $599 for most two-spring garage doors.");
+    const gather = twiml.gather({
+      input: 'speech',
+      timeout: 10,
+      speechTimeout: 'auto',
+      action: '/process',
+      method: 'POST'
+    });
+    gather.say({ voice: 'Polly.Joanna' }, "A standard spring replacement is $599. Is there anything else I can help you with?");
+    twiml.redirect('/voice');
     return res.type('text/xml').send(twiml.toString());
   }
 
@@ -48,7 +56,7 @@ app.post('/process', async (req, res) => {
     const gptResponse = await axios.post('https://api.openai.com/v1/chat/completions', {
       model: "gpt-3.5-turbo",
       messages: [
-        { role: "system", content: "You are a helpful and professional garage door assistant. Be concise, courteous, and direct." },
+        { role: "system", content: "You are a helpful and professional garage door assistant. Be concise, courteous, and helpful." },
         { role: "user", content: userInput }
       ]
     }, {
@@ -69,7 +77,15 @@ app.post('/process', async (req, res) => {
       twiml.say({ voice: 'Polly.Joanna' }, "Transferring you now.");
       twiml.dial(FORWARD_NUMBER);
     } else {
-      twiml.say({ voice: 'Polly.Joanna' }, reply);
+      const gather = twiml.gather({
+        input: 'speech',
+        timeout: 10,
+        speechTimeout: 'auto',
+        action: '/process',
+        method: 'POST'
+      });
+      gather.say({ voice: 'Polly.Joanna' }, `${reply}. Is there anything else I can help you with?`);
+      twiml.redirect('/voice');
     }
 
     res.type('text/xml').send(twiml.toString());
