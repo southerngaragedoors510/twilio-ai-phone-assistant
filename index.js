@@ -11,6 +11,9 @@ const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
+const updateRoutes = require('./routes/dev/update-code');
+app.use(updateRoutes);
+
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const FORWARD_NUMBER = process.env.TWILIO_FORWARD_NUMBER;
 const DEPLOY_HOOK_URL = process.env.RENDER_DEPLOY_HOOK_URL;
