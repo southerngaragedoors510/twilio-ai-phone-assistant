@@ -1,19 +1,31 @@
 const express = require('express');
 const bodyParser = require('body-parser');
 const axios = require('axios');
+const fs = require('fs');
+const path = require('path');
 const VoiceResponse = require('twilio').twiml.VoiceResponse;
+
 require('dotenv').config();
 
 const app = express();
 app.use(bodyParser.urlencoded({ extended: false }));
+app.use(bodyParser.json());
 
 const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
 const FORWARD_NUMBER = process.env.TWILIO_FORWARD_NUMBER;
+const DEPLOY_HOOK_URL = process.env.RENDER_DEPLOY_HOOK_URL;
+const DEV_API_KEY = process.env.DEV_API_KEY || 'changeme';
 
-// Entry point for the call
+const INDEX_PATH = path.join(__dirname, 'index.js');
+const BACKUP_DIR = path.join(__dirname, 'backups');
+const LOG_PATH = path.join(__dirname, 'logs', 'update-log.jsonl');
+
+// Ensure backup and log dirs exist
+fs.mkdirSync(BACKUP_DIR, { recursive: true });
+fs.mkdirSync(path.dirname(LOG_PATH), { recursive: true });
+
 app.post('/voice', (req, res) => {
   const twiml = new VoiceResponse();
-
   const gather = twiml.gather({
     input: 'speech',
     timeout: 5,
@@ -21,12 +33,10 @@ app.post('/voice', (req, res) => {
     action: '/process',
     method: 'POST'
   });
-
   gather.say({ voice: 'Polly.Joanna' }, "Thanks for calling Southern Garage Doors. How can I help you today?");
   res.type('text/xml').send(twiml.toString());
 });
 
-// Process the spoken input
 app.post('/process', async (req, res) => {
   const userInput = req.body.SpeechResult || '';
   const twiml = new VoiceResponse();
@@ -64,14 +74,9 @@ app.post('/process', async (req, res) => {
       }
     });
 
-    const reply = gptResponse.data.choices[0].message.content.trim().toLowerCase();
+    const reply = gptResponse.data.choices[0].message.content.trim();
 
-    if (
-      reply.includes("talk to someone") ||
-      reply.includes("speak to") ||
-      reply.includes("transfer") ||
-      reply.includes("emergency")
-    ) {
+    if (reply.toLowerCase().includes("talk to someone") || reply.toLowerCase().includes("transfer")) {
       twiml.say({ voice: 'Polly.Joanna' }, "Transferring you now.");
       twiml.dial(FORWARD_NUMBER);
     } else {
@@ -95,9 +100,34 @@ app.post('/process', async (req, res) => {
   }
 });
 
-const port = process.env.PORT || 3000;
-app.listen(port, () => {
-  console.log(`AI Assistant is live on port ${port}`);
-});
+// GPT-Powered Self-Update Endpoint
+app.post('/dev/update-code', async (req, res) => {
+  const { command } = req.body;
+  const apiKey = req.headers['x-api-key'];
+
+  if (apiKey !== DEV_API_KEY) {
+    return res.status(401).json({ error: 'Unauthorized request.' });
+  }
+
+  if (!command) {
+    return res.status(400).json({ error: 'Missing command input.' });
+  }
+
+  const originalCode = fs.readFileSync(INDEX_PATH, 'utf-8');
+  const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backupPath = path.join(BACKUP_DIR, `index-${timestamp}.js`);
+
+  fs.writeFileSync(backupPath, originalCode);
+
+  try {
+    const gptRes = await axios.post('https://api.openai.com/v1/chat/completions', {
+      model: 'gpt-4',
+      messages: [
+        {
+          role: 'system',
+          content: 'You are a Node.js developer modifying index.js for a Twilio voice assistant. The file MUST stay functional and start an Express app with the correct Twilio routes.'
+        },
+        { role: 'user', content: `Here is the current code:\n\n${originalCode}` },
+        { role: 'user', content: `Please
 
 
